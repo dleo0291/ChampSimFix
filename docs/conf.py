@@ -12,7 +12,11 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('./src'))
+import subprocess
+import itertools
+import functools
+import operator
+sys.path.insert(0, os.path.abspath('..'))
 
 
 # -- Project information -----------------------------------------------------
@@ -29,11 +33,13 @@ author = 'The ChampSim Contributors'
 # ones.
 extensions = [
     'sphinx.ext.githubpages',
-    'sphinx_multiversion'
+    'sphinx.ext.autodoc',
+    'sphinxcontrib.bibtex',
+    'breathe'
 ]
 
 # The root document
-root_doc = 'src/index'
+root_doc = 'index'
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -43,15 +49,99 @@ templates_path = ['_templates']
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
+# -- Breathe configuration ---------------------------------------------------
+breathe_projects = {
+    project: "./_doxygen/xml"
+}
+breathe_default_project = project
+
+# -- sphinxcontrib.bibtex configuration --------------------------------------
+bibtex_bibfiles = ['../../PUBLICATIONS_USING_CHAMPSIM.bib']
+
+import pybtex.plugin
+from pybtex.style.sorting import BaseSortingStyle
+from pybtex.style.formatting.unsrt import Style as UnsrtStyle
+
+class YearAuthorTitleSort(BaseSortingStyle):
+    def sorting_key(self, entry):
+        year_key = 99999 - int(entry.fields.get('year', '99999'))
+        return (year_key, YearAuthorTitleSort.author_editor_key(entry), entry.fields.get('title', ''))
+
+    @staticmethod
+    def persons_key(persons):
+        return '   '.join(YearAuthorTitleSort.person_key(person) for person in persons)
+
+    @staticmethod
+    def person_key(person):
+        return '  '.join((
+            ' '.join(person.prelast_names + person.last_names),
+            ' '.join(person.first_names + person.middle_names),
+            ' '.join(person.lineage_names),
+        )).lower()
+
+    @staticmethod
+    def author_editor_key(entry):
+        if entry.persons.get('author'):
+            return YearAuthorTitleSort.persons_key(entry.persons['author'])
+        elif entry.persons.get('editor'):
+            return YearAuthorTitleSort.persons_key(entry.persons['editor'])
+        else:
+            return ''
+
+class YATStyle(UnsrtStyle):
+    default_sorting_style = 'year_author_title'
+
+pybtex.plugin.register_plugin('pybtex.style.sorting', 'year_author_title', YearAuthorTitleSort)
+pybtex.plugin.register_plugin('pybtex.style.formatting', 'year_author_title', YATStyle)
 
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'sphinx_rtd_theme'
+html_theme = 'nature'
+
+def get_cmd_lines(cmd):
+    return subprocess.run(cmd, capture_output=True).stdout.decode().splitlines()
+
+@functools.cache
+def get_current_branch():
+    return get_cmd_lines(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])[0]
+
+def get_branches():
+    result = [ l[2:] for l in get_cmd_lines(['git', 'branch', '--list', '--no-color'])] # remove '* ' marker for current branch
+    return [
+        'master',
+        'develop',
+        *(b for b in result if b.startswith('release/')),
+        *(b for b in result if b.startswith('feature/'))
+    ]
+
+def get_files(branch=None):
+    return get_cmd_lines(['git', 'ls-tree', '-r', '--name-only', branch or get_current_branch(), '--', 'src/'])
+
+def file_branch_map():
+    branch_to_file = { b: get_files(b) for b in get_branches() }
+
+    file_branch_pairs = list(itertools.chain(*(zip(f, itertools.repeat(b)) for b,f in branch_to_file.items())))
+    file_branch_pairs = sorted(file_branch_pairs, key=operator.itemgetter(0))
+    file_to_branch = { os.path.splitext(f[4:])[0]: [b[1] for b in branchlist] for f,branchlist in itertools.groupby(file_branch_pairs, key=operator.itemgetter(0)) }
+
+    return file_to_branch
+
+html_context = {
+    "current_version": get_current_branch(),
+    "up_prefix": { b: '/'.join(['..']*len(get_current_branch().split('/')) + [b]) for b in get_branches() },
+    "branches": get_branches(),
+    "versions": file_branch_map()
+}
+
+html_sidebars = {
+    '**': ['localtoc.html', 'relations.html', 'sourcelink.html', 'other_branches.html', 'searchbox.html']
+}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+#html_static_path = ['_static']
+
