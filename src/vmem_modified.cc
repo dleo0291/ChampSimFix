@@ -117,7 +117,7 @@ uint64_t BuddyAllocator::merging(uint64_t pref_frame, uint64_t cycle){
 
   if (cycle > 10000000) // here we check the cycle count
   {
-    for (uint64_t i = 0; i < free_frame_table.size(); i++)// need to go throught the free fram list and find the first frame number that bigger than the allocated frame num
+    for (uint64_t i = 0; i < free_frame_table.size(); i++)// need to go through the free frame list and find the first frame number thats bigger than the allocated frame num
     {
       if (free_frame_table[i] > allocated_frame_table[index].start_frame)
       {
@@ -209,40 +209,46 @@ std::size_t VirtualMemory::available_ppages() const { return free_table.size(); 
 std::pair<uint64_t, uint64_t> VirtualMemory::va_to_pa(uint32_t cpu_num, uint64_t vaddr)
 {
 
-  // ppage will be created or existing frame, fault 1 if it missed 0 if already defined 
-
-  auto [ppage, fault] = vpage_to_ppage_map.insert({{cpu_num, vaddr >> LOG2_PAGE_SIZE}, ppage_front(dram.current_cycle, vaddr)}); 
-
-  // checking if there is an existing entry. If not then we are creating a new entry using vmem
-  //log2_page_size is the number of bits
-
-  bool faulty;
-
+    bool faulty;
+  uint64_t ppage;
   if (vpage_to_ppage_map.find({cpu_num, vaddr >> LOG2_PAGE_SIZE}) != vpage_to_ppage_map.end())
   {
     faulty = 0;
+    fmt::print("fault results",faulty);
   }
 
   else{
     faulty = 1;
+    fmt::print("fault results",faulty);
   }
-  //checking if there is an existing allocation 
-   
+  // checking if there is an existing entry. If not then we are creating a new entry using vmem
 
-  if (faulty) // if there isn't a current page tabe entry
+  //checking if there is an existing allocation 
+  // ppage will be created or existing frame, fault 1 if it missed 0 if already defined 
+
+  // auto [ppage, fault] = vpage_to_ppage_map.insert({{cpu_num, vaddr >> LOG2_PAGE_SIZE}, ppage_front(dram.current_cycle, vaddr)}); 
+
+  //log2_page_size is the number of bits
+   
+  if (faulty) {// if there isn't a current page tabe entry
     ppage_pop(dram.current_cycle, vaddr); 
 
-    BA.ppage_allocate(dram.current_cycle, vaddr); // here we are allocating using the buddy system
+     // here we are allocating using the buddy system
 
+     // make sure allocation is actuall happening and check if fault is correctly working
+  
+    vpage_to_ppage_map[{cpu_num,vaddr}] = BA.ppage_allocate(dram.current_cycle, vaddr);
+  }
+  ppage = vpage_to_ppage_map[{cpu_num,vaddr}];
 
-  auto paddr = champsim::splice_bits(ppage->second, vaddr, LOG2_PAGE_SIZE);
+  auto paddr = champsim::splice_bits(ppage, vaddr, LOG2_PAGE_SIZE);
 
   if constexpr (champsim::debug_print) {
     fmt::print("[VMEM] {} paddr: {:x} vaddr: {:x} fault: {}\n", __func__, paddr, vaddr, faulty);
   }
 
   return {paddr, faulty ? minor_fault_penalty : 0};
-}
+} 
 
 
 std::pair<uint64_t, uint64_t> VirtualMemory::get_pte_pa(uint32_t cpu_num, uint64_t vaddr, std::size_t level)
@@ -253,12 +259,15 @@ std::pair<uint64_t, uint64_t> VirtualMemory::get_pte_pa(uint32_t cpu_num, uint64
     // next_pte_page = ppage_front(dram.current_cycle, vaddr); 
     // ppage_pop(dram.current_cycle, vaddr);
 
-    next_pte_page = BA.ppage_allocate(dram.current_cycle, vaddr);  
+    next_pte_page = BA.ppage_allocate(dram.current_cycle, vaddr); 
   }
 
   std::tuple key{cpu_num, vaddr >> shamt(level), level};
   auto [ppage, fault] = page_table.insert({key, next_pte_page});
-  
+  // do similar thing to what was done in vadd_pp
+  //have two variables fault and ppage (the actual physical page)
+
+
   if (fault) { // if there is a miss then we will allocate a new frame to the page
     next_pte_page += pte_page_size;
     if (!(next_pte_page % PAGE_SIZE)) {
@@ -266,7 +275,9 @@ std::pair<uint64_t, uint64_t> VirtualMemory::get_pte_pa(uint32_t cpu_num, uint64
       // next_pte_page = ppage_front(dram.current_cycle, vaddr);
       // ppage_pop(dram.current_cycle, vaddr);
 
-      next_pte_page = BA.ppage_allocate(dram.current_cycle, vaddr);
+      // next_pte_page = BA.ppage_allocate(dram.current_cycle, vaddr);
+
+      vpage_to_ppage_map[{cpu_num,vaddr}] = BA.ppage_allocate(dram.current_cycle, vaddr);
     }
   }
 
@@ -280,5 +291,3 @@ std::pair<uint64_t, uint64_t> VirtualMemory::get_pte_pa(uint32_t cpu_num, uint64
 
   return {paddr, fault ? minor_fault_penalty : 0};
 }
-
-
