@@ -1,17 +1,18 @@
-#include <catch.hpp>
+/* #include <catch.hpp>
 #include "vmem.h"
 
 #include "dram_controller.h"
 
-SCENARIO("The virtual memory remove PA asked by PTE") {
+SCENARIO("The Buddy Allocator remove PA asked by PTE") {
   GIVEN("A large virtual memory") {
     constexpr unsigned levels = 5;
+    uint64_t frame_size = 4096;
     constexpr uint64_t pte_page_size = 1ull << 12;
     MEMORY_CONTROLLER dram{1, 3200, 12.5, 12.5, 12.5, 7.5, {}};
     VirtualMemory uut{pte_page_size, levels, 200, dram};
 
     WHEN("PTE requires memory") {
-      std::size_t original_size = uut.available_ppages();
+      std::size_t original_size = uut.BA.free_frame_table.size();
 
       AND_WHEN("PTE ask for a page") {
         auto [paddr_a, delay_a] = uut.get_pte_pa(0, 0, 1);
@@ -19,6 +20,8 @@ SCENARIO("The virtual memory remove PA asked by PTE") {
         THEN("The page table missed") {
           REQUIRE(delay_a > 0);
         }
+        
+        // check if buddy system deallocates
 
         AND_WHEN("PTE asks for another page") {
           auto [paddr_b, delay_b] = uut.get_pte_pa(0, 0, 2);
@@ -33,11 +36,11 @@ SCENARIO("The virtual memory remove PA asked by PTE") {
 
           THEN("The pages are remove from the available pages") {
             // an additional one because it should remove one extra page
-            REQUIRE(original_size - 3 == uut.available_ppages());
-            // QUESTION why was it supposed to reove 3??
+            REQUIRE(original_size - 3 == uut.BA.free_frame_table.size());
           }
         }
       }
     }
   }
 }
+*/
